@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import os
+import traceback
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,6 +61,15 @@ def predict(payload: PredictRequest) -> PredictResponse:
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        error_tail = traceback.format_exc().splitlines()[-6:]
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": str(exc),
+                "traceback_tail": error_tail,
+            },
+        ) from exc
 
     return PredictResponse(
         label=result.label,
