@@ -36,7 +36,7 @@ def resolve_model_source() -> str:
     if MODEL_SUBFOLDER:
         local_model_dir = Path("/tmp/banglabert_model")
         local_model_dir.mkdir(parents=True, exist_ok=True)
-        subfolder = MODEL_SUBFOLDER.strip("/")
+        subfolder = MODEL_SUBFOLDER.strip().strip("/")
 
         for filename in REMOTE_MODEL_FILES:
             cached_file = hf_hub_download(
