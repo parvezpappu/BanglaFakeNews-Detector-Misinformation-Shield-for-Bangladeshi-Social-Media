@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 
 import joblib
 import numpy as np
 import torch
-from huggingface_hub import snapshot_download
+from huggingface_hub import hf_hub_download
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
 from app.backend.config import (
@@ -25,6 +26,7 @@ from app.backend.features import build_model_text, build_xgboost_features
 
 
 LABELS = ["fake", "real"]
+REMOTE_MODEL_FILES = ["config.json", "model.safetensors"]
 
 
 def resolve_model_source() -> str:
@@ -32,18 +34,18 @@ def resolve_model_source() -> str:
         return str(MODEL_DIR)
 
     if MODEL_SUBFOLDER:
-        local_repo_dir = Path(
-            snapshot_download(
+        local_model_dir = Path("/tmp/banglabert_model")
+        local_model_dir.mkdir(parents=True, exist_ok=True)
+        subfolder = MODEL_SUBFOLDER.strip("/")
+
+        for filename in REMOTE_MODEL_FILES:
+            cached_file = hf_hub_download(
                 repo_id=MODEL_NAME,
-                allow_patterns=f"{MODEL_SUBFOLDER.rstrip('/')}/*",
+                filename=f"{subfolder}/{filename}",
             )
-        )
-        local_model_dir = local_repo_dir / MODEL_SUBFOLDER
-        if local_model_dir.exists():
-            return str(local_model_dir)
-        raise FileNotFoundError(
-            f"Downloaded {MODEL_NAME}, but could not find subfolder {MODEL_SUBFOLDER}."
-        )
+            shutil.copyfile(cached_file, local_model_dir / filename)
+
+        return str(local_model_dir)
 
     if ALLOW_PUBLIC_MODEL_FALLBACK:
         return MODEL_NAME
