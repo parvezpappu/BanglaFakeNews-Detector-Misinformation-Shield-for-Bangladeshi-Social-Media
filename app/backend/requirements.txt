@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 transformers
+huggingface_hub
 sentencepiece
 protobuf
 xgboost

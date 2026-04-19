@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import joblib
 import numpy as np
 import torch
+from huggingface_hub import snapshot_download
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
 from app.backend.config import (
@@ -25,6 +27,33 @@ from app.backend.features import build_model_text, build_xgboost_features
 LABELS = ["fake", "real"]
 
 
+def resolve_model_source() -> str:
+    if MODEL_DIR.exists():
+        return str(MODEL_DIR)
+
+    if MODEL_SUBFOLDER:
+        local_repo_dir = Path(
+            snapshot_download(
+                repo_id=MODEL_NAME,
+                allow_patterns=f"{MODEL_SUBFOLDER.rstrip('/')}/*",
+            )
+        )
+        local_model_dir = local_repo_dir / MODEL_SUBFOLDER
+        if local_model_dir.exists():
+            return str(local_model_dir)
+        raise FileNotFoundError(
+            f"Downloaded {MODEL_NAME}, but could not find subfolder {MODEL_SUBFOLDER}."
+        )
+
+    if ALLOW_PUBLIC_MODEL_FALLBACK:
+        return MODEL_NAME
+
+    raise FileNotFoundError(
+        f"Missing fine-tuned BanglaBERT model at {MODEL_DIR}. "
+        "Add the exported banglabert_model folder or set BANGLABERT_MODEL_DIR."
+    )
+
+
 @dataclass
 class PredictionResult:
     label: str
@@ -36,27 +65,15 @@ class PredictionResult:
 class EnsemblePredictor:
     def __init__(self) -> None:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_kwargs = {}
-        if MODEL_DIR.exists():
-            model_source = str(MODEL_DIR)
-        elif MODEL_SUBFOLDER:
-            model_source = MODEL_NAME
-            model_kwargs["subfolder"] = MODEL_SUBFOLDER
-        elif ALLOW_PUBLIC_MODEL_FALLBACK:
-            model_source = MODEL_NAME
-        else:
-            raise FileNotFoundError(
-                f"Missing fine-tuned BanglaBERT model at {MODEL_DIR}. "
-                "Add the exported banglabert_model folder or set BANGLABERT_MODEL_DIR."
-            )
+        model_source = resolve_model_source()
 
         tokenizer_kwargs = {}
         if TOKENIZER_SUBFOLDER:
             tokenizer_kwargs["subfolder"] = TOKENIZER_SUBFOLDER
 
         self.tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_MODEL_NAME, **tokenizer_kwargs)
-        self.classifier = AutoModelForSequenceClassification.from_pretrained(model_source, **model_kwargs)
-        self.encoder = AutoModel.from_pretrained(model_source, **model_kwargs)
+        self.classifier = AutoModelForSequenceClassification.from_pretrained(model_source)
+        self.encoder = AutoModel.from_pretrained(model_source)
         self.classifier.to(self.device)
         self.encoder.to(self.device)
         self.classifier.eval()
