@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+torch
+transformers
+sentencepiece
+xgboost
+joblib
+numpy
+pydantic

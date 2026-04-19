@@ -1,0 +1,54 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Frontend dependencies and build outputs
+app/frontend/node_modules/
+app/frontend/dist/
+app/frontend/.vite/
+app/frontend/.vite-temp/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Raw datasets and temporary exports
+Dataset/
+*.zip
+*.7z
+*.rar
+
+# Training outputs that are useful locally but too heavy/noisy for Git
+artifacts/
+Improved/banglabert_model*/
+Improved/**/checkpoints/
+Improved/**/checkpoint-*/
+Improved/**/*.safetensors
+Improved/**/*.bin
+Improved/**/*.pt
+Improved/**/*.pth
+Improved/stacking_model.joblib
+
+# Keep final lightweight deployment/report files from Improved trackable
+!Improved/
+!Improved/README.md
+!Improved/metrics.json
+!Improved/xgboost_model.joblib
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
