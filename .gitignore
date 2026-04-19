@@ -30,6 +30,10 @@ Dataset/
 *.7z
 *.rar
 
+# Local guide notes not needed in the submitted repo
+COLAB_RUN_GUIDE.md
+DEPLOYMENT_GUIDE.md
+
 # Training outputs that are useful locally but too heavy/noisy for Git
 artifacts/
 Improved/banglabert_model*/
