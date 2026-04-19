@@ -15,6 +15,7 @@ if not MODEL_DIR.exists():
 XGBOOST_MODEL_PATH = Path(os.getenv("XGBOOST_MODEL_PATH", IMPROVED_DIR / "xgboost_model.joblib"))
 
 MODEL_NAME = os.getenv("BANGLABERT_MODEL_NAME", "csebuetnlp/banglabert")
+MODEL_SUBFOLDER = os.getenv("BANGLABERT_MODEL_SUBFOLDER", "")
 ALLOW_PUBLIC_MODEL_FALLBACK = os.getenv("ALLOW_PUBLIC_MODEL_FALLBACK", "false").lower() == "true"
 MAX_LENGTH = 256
 ENSEMBLE_BANGLABERT_WEIGHT = 0.45

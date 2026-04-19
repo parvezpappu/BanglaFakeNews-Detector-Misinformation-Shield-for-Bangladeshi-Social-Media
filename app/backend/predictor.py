@@ -13,6 +13,7 @@ from app.backend.config import (
     ENSEMBLE_XGBOOST_WEIGHT,
     MODEL_DIR,
     MODEL_NAME,
+    MODEL_SUBFOLDER,
     MAX_LENGTH,
     XGBOOST_MODEL_PATH,
 )
@@ -33,8 +34,12 @@ class PredictionResult:
 class EnsemblePredictor:
     def __init__(self) -> None:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        model_kwargs = {}
         if MODEL_DIR.exists():
             model_source = str(MODEL_DIR)
+        elif MODEL_SUBFOLDER:
+            model_source = MODEL_NAME
+            model_kwargs["subfolder"] = MODEL_SUBFOLDER
         elif ALLOW_PUBLIC_MODEL_FALLBACK:
             model_source = MODEL_NAME
         else:
@@ -43,9 +48,9 @@ class EnsemblePredictor:
                 "Add the exported banglabert_model folder or set BANGLABERT_MODEL_DIR."
             )
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_source)
-        self.classifier = AutoModelForSequenceClassification.from_pretrained(model_source)
-        self.encoder = AutoModel.from_pretrained(model_source)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_source, **model_kwargs)
+        self.classifier = AutoModelForSequenceClassification.from_pretrained(model_source, **model_kwargs)
+        self.encoder = AutoModel.from_pretrained(model_source, **model_kwargs)
         self.classifier.to(self.device)
         self.encoder.to(self.device)
         self.classifier.eval()
