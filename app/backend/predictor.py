@@ -15,6 +15,8 @@ from app.backend.config import (
     MODEL_NAME,
     MODEL_SUBFOLDER,
     MAX_LENGTH,
+    TOKENIZER_MODEL_NAME,
+    TOKENIZER_SUBFOLDER,
     XGBOOST_MODEL_PATH,
 )
 from app.backend.features import build_model_text, build_xgboost_features
@@ -48,7 +50,11 @@ class EnsemblePredictor:
                 "Add the exported banglabert_model folder or set BANGLABERT_MODEL_DIR."
             )
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_source, **model_kwargs)
+        tokenizer_kwargs = {}
+        if TOKENIZER_SUBFOLDER:
+            tokenizer_kwargs["subfolder"] = TOKENIZER_SUBFOLDER
+
+        self.tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_MODEL_NAME, **tokenizer_kwargs)
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_source, **model_kwargs)
         self.encoder = AutoModel.from_pretrained(model_source, **model_kwargs)
         self.classifier.to(self.device)
