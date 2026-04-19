@@ -4,6 +4,7 @@ uvicorn
 torch==2.3.1+cpu
 transformers
 sentencepiece
+protobuf
 xgboost
 joblib
 numpy
