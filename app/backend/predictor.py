@@ -8,6 +8,7 @@ import torch
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
 from app.backend.config import (
+    ALLOW_PUBLIC_MODEL_FALLBACK,
     ENSEMBLE_BANGLABERT_WEIGHT,
     ENSEMBLE_XGBOOST_WEIGHT,
     MODEL_DIR,
@@ -32,7 +33,15 @@ class PredictionResult:
 class EnsemblePredictor:
     def __init__(self) -> None:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_source = str(MODEL_DIR) if MODEL_DIR.exists() else MODEL_NAME
+        if MODEL_DIR.exists():
+            model_source = str(MODEL_DIR)
+        elif ALLOW_PUBLIC_MODEL_FALLBACK:
+            model_source = MODEL_NAME
+        else:
+            raise FileNotFoundError(
+                f"Missing fine-tuned BanglaBERT model at {MODEL_DIR}. "
+                "Add the exported banglabert_model folder or set BANGLABERT_MODEL_DIR."
+            )
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_source)
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_source)

@@ -1,0 +1,32 @@
+.git
+.gitignore
+.dockerignore
+
+# Local data and training outputs not needed inside the backend image
+Dataset/
+artifacts/
+scripts/
+COLAB_RUN_GUIDE.md
+DEPLOYMENT_GUIDE.md
+
+# Frontend local/generated files
+app/frontend/node_modules/
+app/frontend/dist/
+
+# Python/Node caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+app/frontend/.vite/
+app/frontend/.vite-temp/
+
+# Temporary compressed exports
+*.zip
+*.7z
+*.rar
+
+# Unused model from the v2 experiment
+Improved/stacking_model.joblib
