@@ -7,6 +7,7 @@ ENV PYTHONPATH=/app
 WORKDIR /app
 
 COPY app/backend/requirements.txt /app/app/backend/requirements.txt
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.5.1+cpu
 RUN pip install --no-cache-dir -r /app/app/backend/requirements.txt
 
 COPY app /app/app
