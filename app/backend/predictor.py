@@ -8,7 +8,7 @@ import joblib
 import numpy as np
 import torch
 from huggingface_hub import hf_hub_download
-from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from app.backend.config import (
     ALLOW_PUBLIC_MODEL_FALLBACK,
@@ -75,11 +75,8 @@ class EnsemblePredictor:
 
         self.tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_MODEL_NAME, **tokenizer_kwargs)
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_source)
-        self.encoder = AutoModel.from_pretrained(model_source)
         self.classifier.to(self.device)
-        self.encoder.to(self.device)
         self.classifier.eval()
-        self.encoder.eval()
 
         if not XGBOOST_MODEL_PATH.exists():
             raise FileNotFoundError(
@@ -110,7 +107,8 @@ class EnsemblePredictor:
     def _embedding(self, text: str) -> np.ndarray:
         encoded = self._encode(text)
         with torch.no_grad():
-            last_hidden = self.encoder(**encoded).last_hidden_state[:, 0, :]
+            base_model = getattr(self.classifier, self.classifier.base_model_prefix)
+            last_hidden = base_model(**encoded).last_hidden_state[:, 0, :]
         return last_hidden.detach().cpu().numpy()[0].astype(np.float32)
 
     def predict(self, category: str, headline: str, content: str) -> PredictionResult:
