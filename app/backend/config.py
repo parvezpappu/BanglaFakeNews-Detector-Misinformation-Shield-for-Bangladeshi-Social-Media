@@ -23,6 +23,28 @@ MAX_LENGTH = 256
 ENSEMBLE_BANGLABERT_WEIGHT = 0.45
 ENSEMBLE_XGBOOST_WEIGHT = 0.55
 
+GOOGLE_SEARCH_API_KEY = os.getenv("GOOGLE_SEARCH_API_KEY", "")
+GOOGLE_SEARCH_CX = os.getenv("GOOGLE_SEARCH_CX", "")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+EVIDENCE_SEARCH_PROVIDER = os.getenv("EVIDENCE_SEARCH_PROVIDER", "auto").lower()
+EVIDENCE_SEARCH_RESULTS = int(os.getenv("EVIDENCE_SEARCH_RESULTS", "5"))
+EVIDENCE_SEARCH_TIMEOUT = float(os.getenv("EVIDENCE_SEARCH_TIMEOUT", "8"))
+
+TRUSTED_EVIDENCE_DOMAINS = [
+    "bssnews.net",
+    "bdnews24.com",
+    "prothomalo.com",
+    "thedailystar.net",
+    "dhakatribune.com",
+    "banglatribune.com",
+    "jugantor.com",
+    "kalerkantho.com",
+    "somoynews.tv",
+    "rumorscanner.com",
+    "boombd.com",
+    "bangladesh.gov.bd",
+]
+
 # Category order must match the training-time one-hot encoding columns.
 CATEGORY_VOCAB = [
     "Crime",

@@ -44,9 +44,27 @@ Example request body:
 {
   "category": "National",
   "headline": "নমুনা শিরোনাম",
-  "content": "নমুনা সংবাদ কনটেন্ট"
+  "content": "নমুনা সংবাদ কনটেন্ট",
+  "include_evidence": true
 }
 ```
+
+## Optional Evidence Search
+
+The easiest provider is Tavily because it needs only one key:
+
+```text
+TAVILY_API_KEY=your_tavily_api_key
+```
+
+The backend also has a Google fallback, but Google Custom Search JSON API is closed to many new customers. Use it only if your Google project already has JSON API access:
+
+```text
+GOOGLE_SEARCH_API_KEY=your_google_api_key
+GOOGLE_SEARCH_CX=your_search_engine_id
+```
+
+Without search credentials, prediction still works and returns `evidence.verdict_hint = "model_only"`.
 
 ## Railway Deployment
 
@@ -60,4 +78,6 @@ Important environment variable:
 
 ```text
 CORS_ALLOW_ORIGINS=https://your-frontend.vercel.app,http://localhost:5173
+GOOGLE_SEARCH_API_KEY=your_google_api_key
+GOOGLE_SEARCH_CX=your_search_engine_id
 ```

@@ -55,6 +55,48 @@ function BranchCard({ title, probabilities }) {
   );
 }
 
+function evidenceLabel(value) {
+  const labels = {
+    model_only: "Model only",
+    likely_real: "Likely real",
+    conflicting_evidence: "Review needed",
+    limited_evidence: "Limited evidence",
+    likely_fake_low_evidence: "Likely fake",
+    uncertain: "Uncertain"
+  };
+  return labels[value] || value;
+}
+
+function EvidencePanel({ evidence }) {
+  if (!evidence) {
+    return null;
+  }
+
+  return (
+    <div className="evidence-block">
+      <div className="evidence-head">
+        <h3>Evidence Check</h3>
+        <span className="evidence-badge">{evidenceLabel(evidence.verdict_hint)}</span>
+      </div>
+      <p>{evidence.note}</p>
+      <a href={evidence.search_url} target="_blank" rel="noreferrer">
+        Open evidence search
+      </a>
+      {evidence.items.length ? (
+        <div className="evidence-list">
+          {evidence.items.map((item) => (
+            <a className="evidence-item" href={item.link} target="_blank" rel="noreferrer" key={item.link}>
+              <strong>{item.title}</strong>
+              <span>{item.source}</span>
+              <p>{item.snippet}</p>
+            </a>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function App() {
   const [form, setForm] = useState(SAMPLE_INPUT);
   const [result, setResult] = useState(null);
@@ -107,11 +149,11 @@ export default function App() {
           <p className="lead">
             This interface sends Bengali news text to a FastAPI backend powered by our
             BanglaBERT + XGBoost ensemble and returns a real-time prediction with
-            confidence breakdowns.
+            confidence breakdowns and optional trusted-source evidence.
           </p>
           <div className="status-strip">
             <span>Model: BanglaBERT + XGBoost</span>
-            <span>Mode: Real-time inference</span>
+            <span>Mode: Inference + evidence</span>
           </div>
         </section>
 
@@ -188,6 +230,8 @@ export default function App() {
                   <BranchCard title="BanglaBERT Branch" probabilities={result.branch_probabilities.banglabert} />
                   <BranchCard title="XGBoost Branch" probabilities={result.branch_probabilities.xgboost} />
                 </div>
+
+                <EvidencePanel evidence={result.evidence} />
               </>
             ) : (
               <div className="empty-state">
