@@ -23,6 +23,7 @@ from app.backend.config import (
     XGBOOST_MODEL_PATH,
     CATEGORY_MODEL_DIR,
 )
+from app.backend.artifacts import ensure_model_artifacts
 from app.backend.features import build_model_text, build_xgboost_features
 
 
@@ -68,6 +69,7 @@ class PredictionResult:
 
 class EnsemblePredictor:
     def __init__(self) -> None:
+        ensure_model_artifacts()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         model_source = resolve_model_source()
 
