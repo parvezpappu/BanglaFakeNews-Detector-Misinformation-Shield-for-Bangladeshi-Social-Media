@@ -21,6 +21,7 @@ from app.backend.config import (
     TOKENIZER_MODEL_NAME,
     TOKENIZER_SUBFOLDER,
     XGBOOST_MODEL_PATH,
+    CATEGORY_MODEL_DIR,
 )
 from app.backend.features import build_model_text, build_xgboost_features
 
@@ -60,6 +61,7 @@ def resolve_model_source() -> str:
 class PredictionResult:
     label: str
     confidence: float
+    category: str
     probabilities: dict[str, float]
     branch_probabilities: dict[str, dict[str, float]]
 
@@ -77,6 +79,12 @@ class EnsemblePredictor:
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_source)
         self.classifier.to(self.device)
         self.classifier.eval()
+
+        self.category_tokenizer = AutoTokenizer.from_pretrained(str(CATEGORY_MODEL_DIR))
+        self.category_model = AutoModelForSequenceClassification.from_pretrained(str(CATEGORY_MODEL_DIR))
+        
+        self.category_model.to(self.device)
+        self.category_model.eval()
 
         if not XGBOOST_MODEL_PATH.exists():
             raise FileNotFoundError(
@@ -103,6 +111,7 @@ class EnsemblePredictor:
         with torch.no_grad():
             logits = self.classifier(**encoded).logits
         return self._softmax(logits.detach().cpu().numpy())[0]
+    
 
     def _embedding(self, text: str) -> np.ndarray:
         encoded = self._encode(text)
@@ -112,32 +121,74 @@ class EnsemblePredictor:
         return last_hidden.detach().cpu().numpy()[0].astype(np.float32)
 
     def predict(self, category: str, headline: str, content: str) -> PredictionResult:
+        # Predict category first (ignores input category)
+        category = self._predict_category(headline, content)
+        
+        # Get category model probabilities (12-dim)
+        category_probs = self._category_probabilities(headline, content)
+        
         text = build_model_text(category, headline, content)
-
+    
         bert_probabilities = self._bert_probabilities(text)
         embedding = self._embedding(text)
-
+    
         xgb_features = build_xgboost_features(
             embedding=embedding,
             bert_probabilities=bert_probabilities,
             category=category,
             headline=headline,
             content=content,
+            category_probs=category_probs,
         ).reshape(1, -1)
         xgb_probabilities = self.xgboost_model.predict_proba(xgb_features)[0]
-
+    
         ensemble_probabilities = (
             ENSEMBLE_BANGLABERT_WEIGHT * bert_probabilities
             + ENSEMBLE_XGBOOST_WEIGHT * xgb_probabilities
         )
-
+    
         best_idx = int(np.argmax(ensemble_probabilities))
         return PredictionResult(
             label=LABELS[best_idx],
             confidence=float(ensemble_probabilities[best_idx]),
+            category=category,
             probabilities={label: float(prob) for label, prob in zip(LABELS, ensemble_probabilities)},
             branch_probabilities={
                 "banglabert": {label: float(prob) for label, prob in zip(LABELS, bert_probabilities)},
                 "xgboost": {label: float(prob) for label, prob in zip(LABELS, xgb_probabilities)},
             },
         )
+    
+
+
+    def _category_probabilities(self, headline: str, content: str) -> np.ndarray:
+        """Get softmax probabilities over all 12 categories."""
+        text = headline + " " + content
+        encoded = self.category_tokenizer(
+            text,
+            truncation=True,
+            max_length=MAX_LENGTH,
+            return_tensors="pt",
+        )
+        encoded = {k: v.to(self.device) for k, v in encoded.items()}
+        with torch.no_grad():
+            logits = self.category_model(**encoded).logits
+        probs = torch.softmax(logits, dim=-1)
+        return probs.cpu().numpy()[0].astype(np.float32)
+
+    
+    def _predict_category(self, headline: str, content: str) -> str:
+        text = headline + " " + content
+    
+        encoded = self.category_tokenizer(
+            text,
+            truncation=True,
+            max_length=512,
+            return_tensors="pt"
+        ).to(self.device)
+    
+        with torch.no_grad():
+            logits = self.category_model(**encoded).logits
+    
+        pred = torch.argmax(logits, dim=1).item()
+        return self.category_model.config.id2label[pred]

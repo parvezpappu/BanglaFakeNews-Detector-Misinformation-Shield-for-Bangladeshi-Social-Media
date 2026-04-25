@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 RUN pip install --no-cache-dir -r /app/app/backend/requirements.txt
 
 COPY app /app/app
-COPY Improved /app/Improved
+COPY artifacts /app/artifacts
 
 EXPOSE 8000
 

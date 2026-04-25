@@ -23,23 +23,25 @@ from transformers import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "artifacts" / "phase1_dataset"
-OUTPUT_DIR = ROOT / "artifacts" / "banglabert_xgboost_ensemble"
+ROOT = Path("/content/drive/MyDrive/BanglaFakeNews")
+DATA_DIR = ROOT / "phase1_dataset"
+OUTPUT_DIR = ROOT / "artifacts" / "banglabert_xgboost_ensemble_v2"
+CATEGORY_MODEL_DIR = ROOT / "category_training" / "artifacts" / "category_model"
+
 MODEL_NAME = "csebuetnlp/banglabert"
 LABEL2ID = {"fake": 0, "real": 1}
 ID2LABEL = {value: key for key, value in LABEL2ID.items()}
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train BanglaBERT + XGBoost ensemble.")
+    parser = argparse.ArgumentParser(description="Train BanglaBERT + XGBoost ensemble with category features.")
     parser.add_argument("--model-name", default=MODEL_NAME)
     parser.add_argument("--epochs", type=float, default=2.0)
     parser.add_argument("--learning-rate", type=float, default=2e-5)
     parser.add_argument("--train-batch-size", type=int, default=8)
     parser.add_argument("--eval-batch-size", type=int, default=16)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
-    parser.add_argument("--max-length", type=int, default=256)
+    parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--save-total-limit", type=int, default=2)
     parser.add_argument("--num-workers", type=int, default=2)
@@ -52,6 +54,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--xgb-learning-rate", type=float, default=0.05)
     parser.add_argument("--xgb-subsample", type=float, default=0.9)
     parser.add_argument("--xgb-colsample-bytree", type=float, default=0.9)
+    parser.add_argument("--category-model-path", type=str, default=str(CATEGORY_MODEL_DIR))
     return parser.parse_args()
 
 
@@ -71,6 +74,18 @@ def build_text(frame: pd.DataFrame) -> list[str]:
         "[CATEGORY] "
         + category
         + " [HEADLINE] "
+        + headline
+        + " [CONTENT] "
+        + content
+    ).tolist()
+
+
+def build_text_no_category(frame: pd.DataFrame) -> list[str]:
+    """Build text WITHOUT category label — used for category prediction (avoids leakage)."""
+    headline = frame["headline"].fillna("").astype(str).str.strip()
+    content = frame["content"].fillna("").astype(str).str.strip()
+    return (
+        "[HEADLINE] "
         + headline
         + " [CONTENT] "
         + content
@@ -211,6 +226,40 @@ def extract_cls_embeddings(
     return np.concatenate(outputs, axis=0)
 
 
+def extract_category_probs(
+    category_model_path: str,
+    tokenizer: AutoTokenizer,
+    frame: pd.DataFrame,
+    max_length: int,
+    batch_size: int,
+) -> np.ndarray:
+    """Extract softmax probabilities over all categories from trained category classifier."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = AutoModelForSequenceClassification.from_pretrained(category_model_path)
+    model.to(device)
+    model.eval()
+
+    texts = build_text_no_category(frame)
+    all_probs = []
+
+    for start in range(0, len(texts), batch_size):
+        batch = texts[start:start + batch_size]
+        encoded = tokenizer(
+            batch,
+            padding=True,
+            truncation=True,
+            max_length=max_length,
+            return_tensors="pt",
+        )
+        encoded = {k: v.to(device) for k, v in encoded.items()}
+        with torch.no_grad():
+            logits = model(**encoded).logits
+            probs = torch.softmax(logits, dim=-1)
+        all_probs.append(probs.cpu().numpy())
+
+    return np.concatenate(all_probs, axis=0).astype(np.float32)
+
+
 def eval_from_probs(labels: np.ndarray, probs: np.ndarray) -> dict[str, object]:
     preds = np.argmax(probs, axis=1)
     return {
@@ -257,6 +306,9 @@ def main() -> None:
     set_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(f"Device: {device}")
+    print(f"Category model path: {args.category_model_path}")
 
     train_frame = load_frame("train", args.max_train_samples, args.seed)
     valid_frame = load_frame("valid", args.max_valid_samples, args.seed)
@@ -309,6 +361,7 @@ def main() -> None:
         compute_metrics=compute_metrics,
     )
 
+    print("Training BanglaBERT...")
     trainer.train()
     trainer.save_model(str(OUTPUT_DIR / "banglabert_model"))
     tokenizer.save_pretrained(str(OUTPUT_DIR / "banglabert_model"))
@@ -343,19 +396,64 @@ def main() -> None:
         args.eval_batch_size,
     )
 
-    x_train = np.concatenate([train_embeddings, bert_train_probs, basic_features(train_frame)], axis=1)
-    x_valid = np.concatenate([valid_embeddings, bert_valid_probs, basic_features(valid_frame)], axis=1)
-    x_test = np.concatenate([test_embeddings, bert_test_probs, basic_features(test_frame)], axis=1)
-
     y_train = train_frame["label"].map(LABEL2ID).to_numpy()
     y_valid = valid_frame["label"].map(LABEL2ID).to_numpy()
     y_test = test_frame["label"].map(LABEL2ID).to_numpy()
 
-    train_category_features, valid_category_features, test_category_features = category_features(
-        train_frame,
-        valid_frame,
-        test_frame,
+    # Original category one-hot features
+    train_cat_onehot, valid_cat_onehot, test_cat_onehot = category_features(
+        train_frame, valid_frame, test_frame,
     )
+
+    # Category prediction probabilities (from trained category model)
+    print("Extracting category probabilities...")
+    category_tokenizer = AutoTokenizer.from_pretrained(args.category_model_path)
+    train_cat_probs = extract_category_probs(
+        args.category_model_path, category_tokenizer, train_frame, args.max_length, args.eval_batch_size,
+    )
+    valid_cat_probs = extract_category_probs(
+        args.category_model_path, category_tokenizer, valid_frame, args.max_length, args.eval_batch_size,
+    )
+    test_cat_probs = extract_category_probs(
+        args.category_model_path, category_tokenizer, test_frame, args.max_length, args.eval_batch_size,
+    )
+
+    # Build XGBoost features: embeddings + bert probs + confidence + basic + category one-hot + category probs
+    x_train = np.concatenate(
+        [
+            train_embeddings,
+            bert_train_probs,
+            confidence_features(bert_train_probs),
+            basic_features(train_frame),
+            train_cat_onehot,
+            train_cat_probs,
+        ],
+        axis=1,
+    )
+    x_valid = np.concatenate(
+        [
+            valid_embeddings,
+            bert_valid_probs,
+            confidence_features(bert_valid_probs),
+            basic_features(valid_frame),
+            valid_cat_onehot,
+            valid_cat_probs,
+        ],
+        axis=1,
+    )
+    x_test = np.concatenate(
+        [
+            test_embeddings,
+            bert_test_probs,
+            confidence_features(bert_test_probs),
+            basic_features(test_frame),
+            test_cat_onehot,
+            test_cat_probs,
+        ],
+        axis=1,
+    )
+
+    print(f"XGBoost feature dimensions: {x_train.shape[1]}")
 
     xgb_model = xgb.XGBClassifier(
         n_estimators=args.xgb_estimators,
@@ -369,37 +467,8 @@ def main() -> None:
         tree_method="hist",
         random_state=args.seed,
     )
-    x_train = np.concatenate(
-        [
-            train_embeddings,
-            bert_train_probs,
-            confidence_features(bert_train_probs),
-            basic_features(train_frame),
-            train_category_features,
-        ],
-        axis=1,
-    )
-    x_valid = np.concatenate(
-        [
-            valid_embeddings,
-            bert_valid_probs,
-            confidence_features(bert_valid_probs),
-            basic_features(valid_frame),
-            valid_category_features,
-        ],
-        axis=1,
-    )
-    x_test = np.concatenate(
-        [
-            test_embeddings,
-            bert_test_probs,
-            confidence_features(bert_test_probs),
-            basic_features(test_frame),
-            test_category_features,
-        ],
-        axis=1,
-    )
 
+    print("Training XGBoost...")
     xgb_model.fit(
         x_train,
         y_train,
@@ -411,14 +480,14 @@ def main() -> None:
     xgb_valid_probs = xgb_model.predict_proba(x_valid)
     xgb_test_probs = xgb_model.predict_proba(x_test)
 
+    # Weighted ensemble
     alpha, ensemble_valid_metrics = tune_alpha(y_valid, bert_valid_probs, xgb_valid_probs)
     ensemble_test_probs = alpha * bert_test_probs + (1.0 - alpha) * xgb_test_probs
+
+    # Stacking ensemble
     meta_train_x = build_meta_features(bert_valid_probs, xgb_valid_probs)
     meta_test_x = build_meta_features(bert_test_probs, xgb_test_probs)
-    stacking_model = LogisticRegression(
-        max_iter=1000,
-        random_state=args.seed,
-    )
+    stacking_model = LogisticRegression(max_iter=1000, random_state=args.seed)
     stacking_model.fit(meta_train_x, y_valid)
     joblib.dump(stacking_model, OUTPUT_DIR / "stacking_model.joblib")
     stacking_test_probs = stacking_model.predict_proba(meta_test_x)
@@ -428,6 +497,8 @@ def main() -> None:
         "train_rows": len(train_frame),
         "valid_rows": len(valid_frame),
         "test_rows": len(test_frame),
+        "xgb_feature_count": x_train.shape[1],
+        "category_model_used": args.category_model_path,
         "banglabert": {
             "validation": eval_from_probs(y_valid, bert_valid_probs),
             "test": eval_from_probs(y_test, bert_test_probs),
@@ -444,20 +515,14 @@ def main() -> None:
         },
         "stacking_ensemble": {
             "meta_model": "logistic_regression",
-            "train_source": "validation_predictions",
             "test": eval_from_probs(y_test, stacking_test_probs),
         },
         "config": {
             "model_name": args.model_name,
             "epochs": args.epochs,
-            "learning_rate": args.learning_rate,
-            "train_batch_size": args.train_batch_size,
-            "eval_batch_size": args.eval_batch_size,
-            "gradient_accumulation_steps": args.gradient_accumulation_steps,
             "max_length": args.max_length,
             "xgb_estimators": args.xgb_estimators,
             "xgb_max_depth": args.xgb_max_depth,
-            "xgb_learning_rate": args.xgb_learning_rate,
         },
     }
 
@@ -467,29 +532,32 @@ def main() -> None:
     )
 
     summary = [
-        "# BanglaBERT + XGBoost Ensemble",
+        "# BanglaBERT + XGBoost Ensemble v2 (with Category Predictions)",
         "",
         f"- Device: `{device}`",
+        f"- Category model: `{args.category_model_path}`",
+        f"- XGBoost features: {x_train.shape[1]}",
         f"- BanglaBERT test macro F1: `{metrics['banglabert']['test']['macro_f1']:.4f}`",
         f"- XGBoost test macro F1: `{metrics['xgboost']['test']['macro_f1']:.4f}`",
-        f"- Ensemble alpha for BanglaBERT: `{alpha:.2f}`",
+        f"- Ensemble alpha: `{alpha:.2f}`",
         f"- Ensemble test macro F1: `{metrics['ensemble']['test']['macro_f1']:.4f}`",
-        f"- Stacking ensemble test macro F1: `{metrics['stacking_ensemble']['test']['macro_f1']:.4f}`",
+        f"- Stacking test macro F1: `{metrics['stacking_ensemble']['test']['macro_f1']:.4f}`",
         "",
-        "## Notes",
-        "",
-        "- XGBoost uses BanglaBERT CLS embeddings, BanglaBERT probabilities, confidence features, simple text features, and category one-hot features.",
-        "- Weighted ensemble uses validation-tuned alpha.",
-        "- Stacking ensemble learns a logistic-regression combiner from validation-set branch outputs.",
+        "## New in v2",
+        "- Added 12 category prediction probabilities from trained category_model",
+        "- Category features help XGBoost learn category-specific fake/news patterns",
         "",
     ]
     (OUTPUT_DIR / "README.md").write_text("\n".join(summary), encoding="utf-8")
 
-    print("Saved ensemble artifacts to:", OUTPUT_DIR)
-    print("BanglaBERT test macro F1:", f"{metrics['banglabert']['test']['macro_f1']:.4f}")
-    print("XGBoost test macro F1:", f"{metrics['xgboost']['test']['macro_f1']:.4f}")
-    print("Ensemble test macro F1:", f"{metrics['ensemble']['test']['macro_f1']:.4f}")
-    print("Stacking ensemble test macro F1:", f"{metrics['stacking_ensemble']['test']['macro_f1']:.4f}")
+    print("\n" + "=" * 50)
+    print("RESULTS")
+    print("=" * 50)
+    print(f"BanglaBERT test macro F1: {metrics['banglabert']['test']['macro_f1']:.4f}")
+    print(f"XGBoost test macro F1:    {metrics['xgboost']['test']['macro_f1']:.4f}")
+    print(f"Ensemble test macro F1:   {metrics['ensemble']['test']['macro_f1']:.4f}")
+    print(f"Stacking test macro F1:   {metrics['stacking_ensemble']['test']['macro_f1']:.4f}")
+    print(f"\nSaved to: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":
