@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import json
 import os
 import traceback
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import joblib
 from pydantic import BaseModel, Field
 
+from app.backend.artifacts import DEFAULT_HF_MODEL_REPO, REQUIRED_ARTIFACT_FILES, ensure_model_artifacts
+from app.backend.config import CATEGORY_MODEL_DIR, MODEL_DIR, ROOT, XGBOOST_MODEL_PATH
 from app.backend.evidence import check_evidence
 from app.backend.predictor import EnsemblePredictor
 
@@ -68,6 +72,53 @@ def get_predictor() -> EnsemblePredictor:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/model-info")
+def model_info() -> dict[str, object]:
+    ensure_model_artifacts()
+
+    missing_files = [
+        relative_path
+        for relative_path in REQUIRED_ARTIFACT_FILES
+        if not (ROOT / relative_path).exists()
+    ]
+
+    metrics_path = ROOT / "artifacts" / "banglabert_xgboost_ensemble_v2" / "metrics.json"
+    label_map_path = ROOT / "artifacts" / "category_model" / "label_map.json"
+
+    metrics = {}
+    if metrics_path.exists():
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+
+    category_labels = []
+    if label_map_path.exists():
+        label_map = json.loads(label_map_path.read_text(encoding="utf-8"))
+        category_labels = sorted(label_map.get("label2id", {}).keys())
+
+    xgb_feature_count = None
+    if XGBOOST_MODEL_PATH.exists():
+        xgb_feature_count = int(joblib.load(XGBOOST_MODEL_PATH).n_features_in_)
+
+    return {
+        "hf_model_repo": os.getenv("HF_MODEL_REPO", DEFAULT_HF_MODEL_REPO),
+        "hf_model_revision": os.getenv("HF_MODEL_REVISION", "main"),
+        "hf_token_configured": bool(os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")),
+        "model_dir": str(MODEL_DIR),
+        "category_model_dir": str(CATEGORY_MODEL_DIR),
+        "xgboost_model_path": str(XGBOOST_MODEL_PATH),
+        "all_required_files_present": not missing_files,
+        "missing_files": missing_files,
+        "xgb_feature_count": xgb_feature_count,
+        "using_v2_xgboost_features": xgb_feature_count == 806,
+        "category_count": len(category_labels),
+        "category_labels": category_labels,
+        "metrics": {
+            "xgb_feature_count": metrics.get("xgb_feature_count"),
+            "category_model_used": metrics.get("category_model_used"),
+            "ensemble_test_macro_f1": metrics.get("ensemble", {}).get("test", {}).get("macro_f1"),
+        },
+    }
 
 
 @app.post("/predict", response_model=PredictResponse)
