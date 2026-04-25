@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import gc
 from pathlib import Path
 import shutil
 
@@ -71,22 +72,11 @@ class EnsemblePredictor:
     def __init__(self) -> None:
         ensure_model_artifacts()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_source = resolve_model_source()
+        self.model_source = resolve_model_source()
 
-        tokenizer_kwargs = {}
+        self.tokenizer_kwargs = {}
         if TOKENIZER_SUBFOLDER:
-            tokenizer_kwargs["subfolder"] = TOKENIZER_SUBFOLDER
-
-        self.tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_MODEL_NAME, **tokenizer_kwargs)
-        self.classifier = AutoModelForSequenceClassification.from_pretrained(model_source)
-        self.classifier.to(self.device)
-        self.classifier.eval()
-
-        self.category_tokenizer = AutoTokenizer.from_pretrained(str(CATEGORY_MODEL_DIR))
-        self.category_model = AutoModelForSequenceClassification.from_pretrained(str(CATEGORY_MODEL_DIR))
-        
-        self.category_model.to(self.device)
-        self.category_model.eval()
+            self.tokenizer_kwargs["subfolder"] = TOKENIZER_SUBFOLDER
 
         if not XGBOOST_MODEL_PATH.exists():
             raise FileNotFoundError(
@@ -94,13 +84,18 @@ class EnsemblePredictor:
             )
         self.xgboost_model = joblib.load(XGBOOST_MODEL_PATH)
 
+    def _release_memory(self) -> None:
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def _softmax(self, logits: np.ndarray) -> np.ndarray:
         shifted = logits - logits.max(axis=1, keepdims=True)
         exp_values = np.exp(shifted)
         return exp_values / exp_values.sum(axis=1, keepdims=True)
 
-    def _encode(self, text: str) -> dict[str, torch.Tensor]:
-        encoded = self.tokenizer(
+    def _encode(self, tokenizer: AutoTokenizer, text: str) -> dict[str, torch.Tensor]:
+        encoded = tokenizer(
             text,
             truncation=True,
             max_length=MAX_LENGTH,
@@ -108,31 +103,29 @@ class EnsemblePredictor:
         )
         return {key: value.to(self.device) for key, value in encoded.items()}
 
-    def _bert_probabilities(self, text: str) -> np.ndarray:
-        encoded = self._encode(text)
-        with torch.no_grad():
-            logits = self.classifier(**encoded).logits
-        return self._softmax(logits.detach().cpu().numpy())[0]
-    
+    def _bert_outputs(self, text: str) -> tuple[np.ndarray, np.ndarray]:
+        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_MODEL_NAME, **self.tokenizer_kwargs)
+        classifier = AutoModelForSequenceClassification.from_pretrained(self.model_source)
+        classifier.to(self.device)
+        classifier.eval()
 
-    def _embedding(self, text: str) -> np.ndarray:
-        encoded = self._encode(text)
         with torch.no_grad():
-            base_model = getattr(self.classifier, self.classifier.base_model_prefix)
+            encoded = self._encode(tokenizer, text)
+            logits = classifier(**encoded).logits
+            probabilities = self._softmax(logits.detach().cpu().numpy())[0]
+            base_model = getattr(classifier, classifier.base_model_prefix)
             last_hidden = base_model(**encoded).last_hidden_state[:, 0, :]
-        return last_hidden.detach().cpu().numpy()[0].astype(np.float32)
+            embedding = last_hidden.detach().cpu().numpy()[0].astype(np.float32)
+
+        del classifier, tokenizer, encoded, logits, last_hidden
+        self._release_memory()
+        return probabilities, embedding
 
     def predict(self, category: str, headline: str, content: str) -> PredictionResult:
-        # Predict category first (ignores input category)
-        category = self._predict_category(headline, content)
-        
-        # Get category model probabilities (12-dim)
-        category_probs = self._category_probabilities(headline, content)
-        
+        category, category_probs = self._category_outputs(headline, content)
         text = build_model_text(category, headline, content)
     
-        bert_probabilities = self._bert_probabilities(text)
-        embedding = self._embedding(text)
+        bert_probabilities, embedding = self._bert_outputs(text)
     
         xgb_features = build_xgboost_features(
             embedding=embedding,
@@ -163,10 +156,14 @@ class EnsemblePredictor:
     
 
 
-    def _category_probabilities(self, headline: str, content: str) -> np.ndarray:
-        """Get softmax probabilities over all 12 categories."""
+    def _category_outputs(self, headline: str, content: str) -> tuple[str, np.ndarray]:
         text = headline + " " + content
-        encoded = self.category_tokenizer(
+        tokenizer = AutoTokenizer.from_pretrained(str(CATEGORY_MODEL_DIR))
+        model = AutoModelForSequenceClassification.from_pretrained(str(CATEGORY_MODEL_DIR))
+        model.to(self.device)
+        model.eval()
+
+        encoded = tokenizer(
             text,
             truncation=True,
             max_length=MAX_LENGTH,
@@ -174,23 +171,12 @@ class EnsemblePredictor:
         )
         encoded = {k: v.to(self.device) for k, v in encoded.items()}
         with torch.no_grad():
-            logits = self.category_model(**encoded).logits
+            logits = model(**encoded).logits
         probs = torch.softmax(logits, dim=-1)
-        return probs.cpu().numpy()[0].astype(np.float32)
-
-    
-    def _predict_category(self, headline: str, content: str) -> str:
-        text = headline + " " + content
-    
-        encoded = self.category_tokenizer(
-            text,
-            truncation=True,
-            max_length=512,
-            return_tensors="pt"
-        ).to(self.device)
-    
-        with torch.no_grad():
-            logits = self.category_model(**encoded).logits
-    
         pred = torch.argmax(logits, dim=1).item()
-        return self.category_model.config.id2label[pred]
+        category = model.config.id2label[pred]
+        category_probs = probs.cpu().numpy()[0].astype(np.float32)
+
+        del model, tokenizer, encoded, logits, probs
+        self._release_memory()
+        return category, category_probs
