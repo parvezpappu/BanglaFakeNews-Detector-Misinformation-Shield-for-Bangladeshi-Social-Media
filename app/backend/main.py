@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import hashlib
 import json
 import os
 import traceback
@@ -100,7 +101,18 @@ def model_info() -> dict[str, object]:
     if XGBOOST_MODEL_PATH.exists():
         xgb_feature_count = int(joblib.load(XGBOOST_MODEL_PATH).n_features_in_)
 
+    def file_sha256(relative_path: str) -> str | None:
+        path = ROOT / relative_path
+        if not path.exists():
+            return None
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
     return {
+        "deployment_commit": os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA"),
         "hf_model_repo": os.getenv("HF_MODEL_REPO", DEFAULT_HF_MODEL_REPO),
         "hf_model_revision": os.getenv("HF_MODEL_REVISION", "main"),
         "hf_token_configured": bool(os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")),
@@ -113,6 +125,18 @@ def model_info() -> dict[str, object]:
         "using_v2_xgboost_features": xgb_feature_count == 806,
         "category_count": len(category_labels),
         "category_labels": category_labels,
+        "artifact_hashes": {
+            "xgboost_model.joblib": file_sha256(
+                "artifacts/banglabert_xgboost_ensemble_v2/xgboost_model.joblib"
+            ),
+            "banglabert_model/model.safetensors": file_sha256(
+                "artifacts/banglabert_xgboost_ensemble_v2/banglabert_model/model.safetensors"
+            ),
+            "category_model/model.safetensors": file_sha256(
+                "artifacts/category_model/model.safetensors"
+            ),
+            "metrics.json": file_sha256("artifacts/banglabert_xgboost_ensemble_v2/metrics.json"),
+        },
         "metrics": {
             "xgb_feature_count": metrics.get("xgb_feature_count"),
             "category_model_used": metrics.get("category_model_used"),
