@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import gc
+import json
 from pathlib import Path
 import shutil
 
@@ -23,6 +24,7 @@ from app.backend.config import (
     TOKENIZER_SUBFOLDER,
     XGBOOST_MODEL_PATH,
     CATEGORY_MODEL_DIR,
+    ROOT,
 )
 from app.backend.artifacts import ensure_model_artifacts
 from app.backend.features import build_model_text, build_xgboost_features
@@ -83,6 +85,17 @@ class EnsemblePredictor:
                 f"Missing XGBoost model at {XGBOOST_MODEL_PATH}. Copy it from the Colab export first."
             )
         self.xgboost_model = joblib.load(XGBOOST_MODEL_PATH)
+        self.ensemble_banglabert_weight, self.ensemble_xgboost_weight = self._ensemble_weights()
+
+    def _ensemble_weights(self) -> tuple[float, float]:
+        metrics_path = ROOT / "artifacts" / "banglabert_xgboost_ensemble_v2" / "metrics.json"
+        if metrics_path.exists():
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            alpha = metrics.get("ensemble", {}).get("alpha_for_banglabert")
+            if alpha is not None:
+                alpha = float(alpha)
+                return alpha, 1.0 - alpha
+        return ENSEMBLE_BANGLABERT_WEIGHT, ENSEMBLE_XGBOOST_WEIGHT
 
     def _release_memory(self) -> None:
         gc.collect()
@@ -138,8 +151,8 @@ class EnsemblePredictor:
         xgb_probabilities = self.xgboost_model.predict_proba(xgb_features)[0]
     
         ensemble_probabilities = (
-            ENSEMBLE_BANGLABERT_WEIGHT * bert_probabilities
-            + ENSEMBLE_XGBOOST_WEIGHT * xgb_probabilities
+            self.ensemble_banglabert_weight * bert_probabilities
+            + self.ensemble_xgboost_weight * xgb_probabilities
         )
     
         best_idx = int(np.argmax(ensemble_probabilities))
@@ -157,7 +170,7 @@ class EnsemblePredictor:
 
 
     def _category_outputs(self, headline: str, content: str) -> tuple[str, np.ndarray]:
-        text = headline + " " + content
+        text = f"[HEADLINE] {headline.strip()} [CONTENT] {content.strip()}"
         tokenizer = AutoTokenizer.from_pretrained(str(CATEGORY_MODEL_DIR))
         model = AutoModelForSequenceClassification.from_pretrained(str(CATEGORY_MODEL_DIR))
         model.to(self.device)

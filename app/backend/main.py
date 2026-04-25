@@ -116,6 +116,8 @@ def model_info() -> dict[str, object]:
         "metrics": {
             "xgb_feature_count": metrics.get("xgb_feature_count"),
             "category_model_used": metrics.get("category_model_used"),
+            "alpha_for_banglabert": metrics.get("ensemble", {}).get("alpha_for_banglabert"),
+            "alpha_for_xgboost": metrics.get("ensemble", {}).get("alpha_for_xgboost"),
             "ensemble_test_macro_f1": metrics.get("ensemble", {}).get("test", {}).get("macro_f1"),
         },
     }
