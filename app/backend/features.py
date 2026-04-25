@@ -48,6 +48,7 @@ def build_xgboost_features(
     category: str,
     headline: str,
     content: str,
+    category_probs: np.ndarray,
 ) -> np.ndarray:
     parts = [
         embedding.astype(np.float32),
@@ -55,5 +56,6 @@ def build_xgboost_features(
         confidence_features(bert_probabilities),
         basic_features(category, headline, content),
         category_features(category),
+        category_probs.astype(np.float32),
     ]
     return np.concatenate(parts, axis=0).astype(np.float32)

@@ -13,7 +13,7 @@ from app.backend.predictor import EnsemblePredictor
 
 
 class PredictRequest(BaseModel):
-    category: str = Field(default="National")
+    category: str | None = None
     headline: str
     content: str
     include_evidence: bool = Field(default=True)
@@ -38,6 +38,7 @@ class EvidenceResponse(BaseModel):
 class PredictResponse(BaseModel):
     label: str
     confidence: float
+    category: str
     probabilities: dict[str, float]
     branch_probabilities: dict[str, dict[str, float]]
     evidence: EvidenceResponse | None = None
@@ -73,11 +74,14 @@ def health() -> dict[str, str]:
 def predict(payload: PredictRequest) -> PredictResponse:
     try:
         predictor = get_predictor()
+        category = payload.category or "National"  # default fallback
+
         result = predictor.predict(
-            category=payload.category,
+            category=category,
             headline=payload.headline,
             content=payload.content,
         )
+
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
@@ -118,6 +122,7 @@ def predict(payload: PredictRequest) -> PredictResponse:
     return PredictResponse(
         label=result.label,
         confidence=result.confidence,
+        category=result.category,  
         probabilities=result.probabilities,
         branch_probabilities=result.branch_probabilities,
         evidence=evidence,

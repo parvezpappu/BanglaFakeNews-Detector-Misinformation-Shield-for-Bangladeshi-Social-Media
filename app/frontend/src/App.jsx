@@ -3,26 +3,25 @@ import { useState } from "react";
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 const SAMPLE_INPUT = {
-  category: "National",
   headline: "মন্ত্রী-প্রতিমন্ত্রীদের সফরের সময় মানতে হবে যেসব রাষ্ট্রাচার",
   content:
     "রাষ্ট্রীয় বা সরকারি কাজে মন্ত্রী, প্রতিমন্ত্রী ও উপমন্ত্রীদের (বর্তমানে উপমন্ত্রী নেই) বিদেশযাত্রা ও দেশে ফেরার সময় এবং দেশের ভেতরে সফরকালে অনুসরণীয় রাষ্ট্রাচার (প্রটোকল) বিষয়ে নির্দেশনা জারি করেছে মন্ত্রিপরিষদ বিভাগ। এতে ১১ ধরনের নির্দেশনা রয়েছে। এ ছাড়া আরও চারটি সাধারণ নির্দেশনার কথা রয়েছে। ১৬ এপ্রিল এই নির্দেশনা জারি করা হয়।"
 };
 
-const categories = [
-  "National",
-  "International",
-  "Politics",
-  "Sports",
-  "Entertainment",
-  "Finance",
-  "Education",
-  "Editorial",
-  "Miscellaneous",
-  "Lifestyle",
-  "Technology",
-  "Crime"
-];
+// const categories = [
+//   "National",
+//   "International",
+//   "Politics",
+//   "Sports",
+//   "Entertainment",
+//   "Finance",
+//   "Education",
+//   "Editorial",
+//   "Miscellaneous",
+//   "Lifestyle",
+//   "Technology",
+//   "Crime"
+// ];
 
 function formatPercent(value) {
   return `${(value * 100).toFixed(1)}%`;
@@ -145,16 +144,6 @@ export default function App() {
               </button>
             </div>
 
-            <label className="field">
-              <span>Category</span>
-              <select value={form.category} onChange={(event) => updateField("category", event.target.value)}>
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </label>
 
             <label className="field">
               <span>Headline</span>
@@ -195,6 +184,9 @@ export default function App() {
                   <div>
                     <p className="verdict-label">Ensemble Verdict</p>
                     <h3>{result.label.toUpperCase()}</h3>
+                    <p className="detected-category">
+                     Category: <strong>{result.category}</strong>
+                   </p>
                   </div>
                   <div className="confidence-pill">{formatPercent(result.confidence)}</div>
                 </div>

@@ -5,21 +5,20 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-IMPROVED_DIR = ROOT / "Improved"
+ENSEMBLE_DIR = ROOT / "artifacts" / "banglabert_xgboost_ensemble_v2"
+CATEGORY_MODEL_DIR = ROOT / "artifacts" / "category_model"
 
-MODEL_DIR = Path(os.getenv("BANGLABERT_MODEL_DIR", IMPROVED_DIR / "banglabert_model"))
-if not MODEL_DIR.exists():
-    nested_model_dir = IMPROVED_DIR / "banglabert_model-20260418T171553Z-3-001" / "banglabert_model"
-    if nested_model_dir.exists():
-        MODEL_DIR = nested_model_dir
-XGBOOST_MODEL_PATH = Path(os.getenv("XGBOOST_MODEL_PATH", IMPROVED_DIR / "xgboost_model.joblib"))
+MODEL_DIR = Path(os.getenv("BANGLABERT_MODEL_DIR", ENSEMBLE_DIR / "banglabert_model"))
+XGBOOST_MODEL_PATH = Path(os.getenv("XGBOOST_MODEL_PATH", ENSEMBLE_DIR / "xgboost_model.joblib"))
+STACKING_MODEL_PATH = Path(os.getenv("STACKING_MODEL_PATH", ENSEMBLE_DIR / "stacking_model.joblib"))
+
 
 MODEL_NAME = os.getenv("BANGLABERT_MODEL_NAME", "csebuetnlp/banglabert")
 MODEL_SUBFOLDER = os.getenv("BANGLABERT_MODEL_SUBFOLDER", "")
 TOKENIZER_MODEL_NAME = os.getenv("TOKENIZER_MODEL_NAME", "csebuetnlp/banglabert")
 TOKENIZER_SUBFOLDER = os.getenv("TOKENIZER_SUBFOLDER", "")
 ALLOW_PUBLIC_MODEL_FALLBACK = os.getenv("ALLOW_PUBLIC_MODEL_FALLBACK", "false").lower() == "true"
-MAX_LENGTH = 256
+MAX_LENGTH = 512
 ENSEMBLE_BANGLABERT_WEIGHT = 0.45
 ENSEMBLE_XGBOOST_WEIGHT = 0.55
 
