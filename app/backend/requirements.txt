@@ -4,7 +4,11 @@ transformers
 huggingface_hub
 sentencepiece
 protobuf
-xgboost
+lightgbm
 joblib
 numpy
 pydantic
+requests
+beautifulsoup4
+pymongo
+certifi

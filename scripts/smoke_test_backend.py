@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from app.backend.predictor import EnsemblePredictor
+from app1.backend.predictor import EnsemblePredictor
 
 
 def main() -> None:

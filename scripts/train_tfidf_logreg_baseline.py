@@ -19,11 +19,8 @@ OUTPUT_DIR = ROOT / "artifacts" / "baseline_tfidf_logreg"
 def combine_text(frame: pd.DataFrame) -> list[str]:
     headline = frame["headline"].fillna("").astype(str).str.strip()
     content = frame["content"].fillna("").astype(str).str.strip()
-    category = frame["category"].fillna("").astype(str).str.strip()
     return (
-        "[CATEGORY] "
-        + category
-        + " [HEADLINE] "
+        "[HEADLINE] "
         + headline
         + " [CONTENT] "
         + content
@@ -42,12 +39,7 @@ def compute_metrics(y_true: list[str], y_pred: list[str]) -> dict[str, object]:
         "accuracy": round(accuracy_score(y_true, y_pred), 4),
         "macro_f1": round(f1_score(y_true, y_pred, average="macro"), 4),
         "weighted_f1": round(f1_score(y_true, y_pred, average="weighted"), 4),
-        "classification_report": classification_report(
-            y_true,
-            y_pred,
-            digits=4,
-            output_dict=True,
-        ),
+        "classification_report": classification_report(y_true, y_pred, digits=4, output_dict=True),
     }
 
 
@@ -58,24 +50,8 @@ def main() -> None:
 
     pipeline = Pipeline(
         steps=[
-            (
-                "tfidf",
-                TfidfVectorizer(
-                    analyzer="word",
-                    ngram_range=(1, 2),
-                    min_df=2,
-                    max_features=120000,
-                    sublinear_tf=True,
-                ),
-            ),
-            (
-                "classifier",
-                LogisticRegression(
-                    solver="liblinear",
-                    max_iter=1000,
-                    random_state=42,
-                ),
-            ),
+            ("tfidf", TfidfVectorizer(analyzer="word", ngram_range=(1, 2), min_df=2, max_features=120000, sublinear_tf=True)),
+            ("classifier", LogisticRegression(solver="liblinear", max_iter=1000, random_state=42)),
         ]
     )
 
@@ -92,27 +68,13 @@ def main() -> None:
 
     metrics = {
         "model_name": "tfidf_logistic_regression",
-        "features": "category + headline + content",
-        "vectorizer": {
-            "analyzer": "word",
-            "ngram_range": [1, 2],
-            "min_df": 2,
-            "max_features": 120000,
-            "sublinear_tf": True,
-        },
-        "classifier": {
-            "type": "LogisticRegression",
-            "solver": "liblinear",
-            "max_iter": 1000,
-            "random_state": 42,
-        },
+        "features": "headline + content",
+        "vectorizer": {"analyzer": "word", "ngram_range": [1, 2], "min_df": 2, "max_features": 120000, "sublinear_tf": True},
+        "classifier": {"type": "LogisticRegression", "solver": "liblinear", "max_iter": 1000, "random_state": 42},
         "validation": valid_metrics,
         "test": test_metrics,
     }
-    (OUTPUT_DIR / "metrics.json").write_text(
-        json.dumps(metrics, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    (OUTPUT_DIR / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
 
     summary_lines = [
         "# TF-IDF + Logistic Regression Baseline",
@@ -123,10 +85,8 @@ def main() -> None:
         f"- Test macro F1: `{test_metrics['macro_f1']}`",
         "",
         "## Notes",
-        "",
-        "- Input text is built from `category + headline + content`.",
+        "- Input text is built from `headline + content` (category excluded).",
         "- This is the classical baseline for comparison against BanglaBERT later.",
-        "- The serialized model is saved as `model.joblib`.",
         "",
     ]
     (OUTPUT_DIR / "README.md").write_text("\n".join(summary_lines), encoding="utf-8")

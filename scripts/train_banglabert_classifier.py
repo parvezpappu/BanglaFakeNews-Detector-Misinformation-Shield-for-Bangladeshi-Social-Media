@@ -52,13 +52,10 @@ def set_seed(seed: int) -> None:
 
 
 def build_text(frame: pd.DataFrame) -> list[str]:
-    category = frame["category"].fillna("").astype(str).str.strip()
     headline = frame["headline"].fillna("").astype(str).str.strip()
     content = frame["content"].fillna("").astype(str).str.strip()
     return (
-        "[CATEGORY] "
-        + category
-        + " [HEADLINE] "
+        "[HEADLINE] "
         + headline
         + " [CONTENT] "
         + content
@@ -83,11 +80,7 @@ def frame_to_dataset(frame: pd.DataFrame) -> Dataset:
 
 def tokenize_dataset(dataset: Dataset, tokenizer: AutoTokenizer, max_length: int) -> Dataset:
     def tokenize_batch(batch: dict[str, list[str]]) -> dict[str, list[list[int]]]:
-        return tokenizer(
-            batch["text"],
-            truncation=True,
-            max_length=max_length,
-        )
+        return tokenizer(batch["text"], truncation=True, max_length=max_length)
 
     return dataset.map(tokenize_batch, batched=True, remove_columns=["text"])
 
@@ -104,13 +97,7 @@ def compute_metrics(eval_pred: tuple[np.ndarray, np.ndarray]) -> dict[str, float
 
 def detailed_report(labels: list[int], preds: list[int]) -> dict[str, object]:
     label_names = [ID2LABEL[idx] for idx in sorted(ID2LABEL)]
-    return classification_report(
-        labels,
-        preds,
-        target_names=label_names,
-        digits=4,
-        output_dict=True,
-    )
+    return classification_report(labels, preds, target_names=label_names, digits=4, output_dict=True)
 
 
 def save_summary(
@@ -136,10 +123,9 @@ def save_summary(
         "",
         "## Notes",
         "",
-        "- Input text is built from `category + headline + content`.",
+        "- Input text is built from `headline + content` (category excluded).",
         "- This run is directly comparable with the TF-IDF baseline on the same split.",
         "- Detailed metrics are stored in `metrics.json`.",
-        "- Use `--skip-model-save` on low-disk machines and rerun on Colab or Kaggle for the full checkpoint.",
         "",
     ]
     (output_dir / "README.md").write_text("\n".join(summary_lines), encoding="utf-8")
@@ -158,10 +144,7 @@ def main() -> None:
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     model = AutoModelForSequenceClassification.from_pretrained(
-        args.model_name,
-        num_labels=2,
-        id2label=ID2LABEL,
-        label2id=LABEL2ID,
+        args.model_name, num_labels=2, id2label=ID2LABEL, label2id=LABEL2ID,
     )
     os.environ["HF_HUB_OFFLINE"] = "1"
 
@@ -234,10 +217,7 @@ def main() -> None:
         "validation": clean_validation_metrics,
         "test": clean_test_metrics,
     }
-    (output_dir / "metrics.json").write_text(
-        json.dumps(metrics, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    (output_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if not args.skip_model_save:
         model_dir = output_dir / "model"

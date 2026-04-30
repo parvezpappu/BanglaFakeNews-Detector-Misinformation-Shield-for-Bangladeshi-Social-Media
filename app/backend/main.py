@@ -1,27 +1,33 @@
 from __future__ import annotations
 
 from functools import lru_cache
-import hashlib
-import json
 import os
 import traceback
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import joblib
 from pydantic import BaseModel, Field
 
-from app.backend.artifacts import DEFAULT_HF_MODEL_REPO, REQUIRED_ARTIFACT_FILES, ensure_model_artifacts
-from app.backend.config import CATEGORY_MODEL_DIR, MODEL_DIR, ROOT, XGBOOST_MODEL_PATH
 from app.backend.evidence import check_evidence
+from app.backend.history_store import (
+    delete_prediction,
+    history_status_message,
+    is_history_enabled,
+    list_predictions,
+    save_prediction,
+)
 from app.backend.predictor import EnsemblePredictor
 
 
 class PredictRequest(BaseModel):
-    category: str | None = None
     headline: str
     content: str
     include_evidence: bool = Field(default=True)
+
+
+class EvidenceRequest(BaseModel):
+    headline: str
+    content: str = ""
 
 
 class EvidenceItemResponse(BaseModel):
@@ -43,13 +49,33 @@ class EvidenceResponse(BaseModel):
 class PredictResponse(BaseModel):
     label: str
     confidence: float
-    category: str
     probabilities: dict[str, float]
     branch_probabilities: dict[str, dict[str, float]]
     evidence: EvidenceResponse | None = None
 
 
-app = FastAPI(title="Bangla Fake News Detector API", version="0.1.0")
+class HistoryItemResponse(BaseModel):
+    id: str
+    headline: str
+    content: str
+    label: str
+    confidence: float
+    probabilities: dict[str, float]
+    branch_probabilities: dict[str, dict[str, float]]
+    created_at: str
+
+
+class HistoryResponse(BaseModel):
+    enabled: bool
+    message: str = ""
+    items: list[HistoryItemResponse]
+
+
+class DeleteHistoryResponse(BaseModel):
+    deleted: bool
+
+
+app = FastAPI(title="Bangla Fake News Detector API", version="0.4.0")
 
 cors_origins = [
     origin.strip()
@@ -75,106 +101,56 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/model-info")
-def model_info() -> dict[str, object]:
-    ensure_model_artifacts()
+@app.get("/history", response_model=HistoryResponse)
+def history(limit: int = 20) -> HistoryResponse:
+    return HistoryResponse(
+        enabled=is_history_enabled(),
+        message=history_status_message(),
+        items=[
+            HistoryItemResponse(
+                id=item["id"],
+                headline=item["headline"],
+                content=item["content"],
+                label=item["label"],
+                confidence=item["confidence"],
+                probabilities=item["probabilities"],
+                branch_probabilities=item["branch_probabilities"],
+                created_at=item["created_at"],
+            )
+            for item in list_predictions(limit=limit)
+        ],
+    )
 
-    missing_files = [
-        relative_path
-        for relative_path in REQUIRED_ARTIFACT_FILES
-        if not (ROOT / relative_path).exists()
-    ]
 
-    metrics_path = ROOT / "artifacts" / "banglabert_xgboost_ensemble_v2" / "metrics.json"
-    label_map_path = ROOT / "artifacts" / "category_model" / "label_map.json"
-
-    metrics = {}
-    if metrics_path.exists():
-        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
-
-    category_labels = []
-    if label_map_path.exists():
-        label_map = json.loads(label_map_path.read_text(encoding="utf-8"))
-        category_labels = sorted(label_map.get("label2id", {}).keys())
-
-    xgb_feature_count = None
-    if XGBOOST_MODEL_PATH.exists():
-        xgb_feature_count = int(joblib.load(XGBOOST_MODEL_PATH).n_features_in_)
-
-    def file_sha256(relative_path: str) -> str | None:
-        path = ROOT / relative_path
-        if not path.exists():
-            return None
-        digest = hashlib.sha256()
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
-
-    return {
-        "deployment_commit": os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA"),
-        "hf_model_repo": os.getenv("HF_MODEL_REPO", DEFAULT_HF_MODEL_REPO),
-        "hf_model_revision": os.getenv("HF_MODEL_REVISION", "main"),
-        "hf_token_configured": bool(os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")),
-        "model_dir": str(MODEL_DIR),
-        "category_model_dir": str(CATEGORY_MODEL_DIR),
-        "xgboost_model_path": str(XGBOOST_MODEL_PATH),
-        "all_required_files_present": not missing_files,
-        "missing_files": missing_files,
-        "xgb_feature_count": xgb_feature_count,
-        "using_v2_xgboost_features": xgb_feature_count == 806,
-        "category_count": len(category_labels),
-        "category_labels": category_labels,
-        "artifact_hashes": {
-            "xgboost_model.joblib": file_sha256(
-                "artifacts/banglabert_xgboost_ensemble_v2/xgboost_model.joblib"
-            ),
-            "banglabert_model/model.safetensors": file_sha256(
-                "artifacts/banglabert_xgboost_ensemble_v2/banglabert_model/model.safetensors"
-            ),
-            "category_model/model.safetensors": file_sha256(
-                "artifacts/category_model/model.safetensors"
-            ),
-            "metrics.json": file_sha256("artifacts/banglabert_xgboost_ensemble_v2/metrics.json"),
-        },
-        "metrics": {
-            "xgb_feature_count": metrics.get("xgb_feature_count"),
-            "category_model_used": metrics.get("category_model_used"),
-            "alpha_for_banglabert": metrics.get("ensemble", {}).get("alpha_for_banglabert"),
-            "alpha_for_xgboost": metrics.get("ensemble", {}).get("alpha_for_xgboost"),
-            "ensemble_test_macro_f1": metrics.get("ensemble", {}).get("test", {}).get("macro_f1"),
-        },
-    }
+@app.delete("/history/{prediction_id}", response_model=DeleteHistoryResponse)
+def delete_history_item(prediction_id: str) -> DeleteHistoryResponse:
+    deleted = delete_prediction(prediction_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="History item not found.")
+    return DeleteHistoryResponse(deleted=True)
 
 
 @app.post("/predict", response_model=PredictResponse)
 def predict(payload: PredictRequest) -> PredictResponse:
     try:
         predictor = get_predictor()
-        category = payload.category or "National"  # default fallback
-
         result = predictor.predict(
-            category=category,
             headline=payload.headline,
             content=payload.content,
         )
-
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         error_tail = traceback.format_exc().splitlines()[-6:]
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": str(exc),
-                "traceback_tail": error_tail,
-            },
+            detail={"error": str(exc), "traceback_tail": error_tail},
         ) from exc
 
     evidence = None
     if payload.include_evidence:
         evidence_result = check_evidence(
-            category=payload.category,
+            category="",
             headline=payload.headline,
             content=payload.content,
             model_label=result.label,
@@ -186,21 +162,55 @@ def predict(payload: PredictRequest) -> PredictResponse:
             search_url=evidence_result.search_url,
             items=[
                 EvidenceItemResponse(
-                    title=item.title,
-                    link=item.link,
-                    snippet=item.snippet,
-                    source=item.source,
+                    title=item.title, link=item.link,
+                    snippet=item.snippet, source=item.source,
                 )
                 for item in evidence_result.items
             ],
             note=evidence_result.note,
         )
 
+    try:
+        save_prediction(
+            headline=payload.headline,
+            content=payload.content,
+            label=result.label,
+            confidence=result.confidence,
+            probabilities=result.probabilities,
+            branch_probabilities=result.branch_probabilities,
+        )
+    except Exception:
+        traceback.print_exc()
+
     return PredictResponse(
         label=result.label,
         confidence=result.confidence,
-        category=result.category,  
         probabilities=result.probabilities,
         branch_probabilities=result.branch_probabilities,
         evidence=evidence,
+    )
+
+
+@app.post("/check-evidence")
+def check_evidence_endpoint(payload: EvidenceRequest) -> EvidenceResponse:
+    from app.backend.evidence_search import search_evidence
+
+    result = search_evidence(
+        headline=payload.headline,
+        content=payload.content,
+    )
+
+    return EvidenceResponse(
+        status=result.status,
+        verdict_hint="",
+        query=result.query,
+        search_url=result.search_url,
+        items=[
+            EvidenceItemResponse(
+                title=item.title, link=item.link,
+                snippet=item.snippet, source=item.source,
+            )
+            for item in result.items
+        ],
+        note=result.note,
     )
