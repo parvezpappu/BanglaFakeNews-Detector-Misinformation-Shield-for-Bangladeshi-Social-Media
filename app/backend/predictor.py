@@ -21,6 +21,9 @@ from app.backend.config import (
     TOKENIZER_MODEL_NAME,
     TOKENIZER_SUBFOLDER,
     LGBM_MODEL_PATH,
+    LGBM_MODEL_REPO_ID,
+    LGBM_MODEL_FILENAME,
+    LGBM_MODEL_SUBFOLDER,
 )
 from app.backend.features import build_model_text, build_xgboost_features
 
@@ -53,6 +56,21 @@ def resolve_model_source() -> str:
     )
 
 
+def resolve_lgbm_model_path() -> Path:
+    if LGBM_MODEL_PATH.exists():
+        return LGBM_MODEL_PATH
+
+    if LGBM_MODEL_REPO_ID and LGBM_MODEL_SUBFOLDER:
+        remote_filename = f"{LGBM_MODEL_SUBFOLDER.strip().strip('/')}/{LGBM_MODEL_FILENAME}"
+        return Path(hf_hub_download(repo_id=LGBM_MODEL_REPO_ID, filename=remote_filename))
+
+    raise FileNotFoundError(
+        f"Missing LightGBM model at {LGBM_MODEL_PATH}. "
+        "Copy it from the Colab export first, or set LGBM_MODEL_REPO_ID and "
+        "LGBM_MODEL_SUBFOLDER so the backend can download it during deployment."
+    )
+
+
 @dataclass
 class PredictionResult:
     label: str
@@ -78,11 +96,7 @@ class EnsemblePredictor:
         self.classifier.eval()
         self.encoder.eval()
 
-        if not LGBM_MODEL_PATH.exists():
-            raise FileNotFoundError(
-                f"Missing LightGBM model at {LGBM_MODEL_PATH}. Copy it from the Colab export first."
-            )
-        self.lgb_model = joblib.load(LGBM_MODEL_PATH)
+        self.lgb_model = joblib.load(resolve_lgbm_model_path())
 
     def _softmax(self, logits: np.ndarray) -> np.ndarray:
         shifted = logits - logits.max(axis=1, keepdims=True)

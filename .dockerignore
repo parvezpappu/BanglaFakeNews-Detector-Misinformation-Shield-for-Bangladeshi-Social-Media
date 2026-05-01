@@ -1,10 +1,20 @@
 .git
 .gitignore
 .dockerignore
+.env
+.env.*
 
 # Local data and training outputs not needed inside the backend image
 Dataset/
-artifacts/
+artifacts/*
+!artifacts/banglabert_lightgbm_ensemble/
+!artifacts/banglabert_lightgbm_ensemble/README.md
+!artifacts/banglabert_lightgbm_ensemble/metrics.json
+!artifacts/banglabert_lightgbm_ensemble/lightgbm_model.joblib
+!artifacts/banglabert_lightgbm_ensemble/stacking_model.joblib
+!artifacts/banglabert_lightgbm_ensemble/banglabert_model/
+!artifacts/banglabert_lightgbm_ensemble/banglabert_model/**
+artifacts/banglabert_lightgbm_ensemble/checkpoints/
 scripts/
 COLAB_RUN_GUIDE.md
 DEPLOYMENT_GUIDE.md
@@ -29,4 +39,5 @@ app/frontend/.vite-temp/
 *.rar
 
 # Unused model from the v2 experiment
+Improved/
 Improved/stacking_model.joblib

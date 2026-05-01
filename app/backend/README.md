@@ -1,22 +1,36 @@
 # Backend Inference
 
-This backend serves the final project model as a `BanglaBERT + XGBoost ensemble`.
+This backend serves the final project model as a `BanglaBERT + LightGBM ensemble`.
 
 ## What It Needs
 
-Place these exported artifacts from Colab into `Improved/`:
+Place these exported artifacts from Colab into `artifacts/banglabert_lightgbm_ensemble/`:
 
-- `xgboost_model.joblib`
+- `lightgbm_model.joblib`
 - `banglabert_model/`
 
 The local folder should look like:
 
 ```text
-Improved/
+artifacts/banglabert_lightgbm_ensemble/
   banglabert_model/
-  xgboost_model.joblib
+  lightgbm_model.joblib
+  stacking_model.joblib
   metrics.json
   README.md
+```
+
+For Git-based deployment, upload the exported model files to a Hugging Face model
+repo and set:
+
+```text
+BANGLABERT_MODEL_NAME=your-username/your-model-repo
+BANGLABERT_MODEL_SUBFOLDER=banglabert_lightgbm_ensemble/banglabert_model
+TOKENIZER_MODEL_NAME=your-username/your-model-repo
+TOKENIZER_SUBFOLDER=banglabert_lightgbm_ensemble/banglabert_model
+LGBM_MODEL_REPO_ID=your-username/your-model-repo
+LGBM_MODEL_SUBFOLDER=banglabert_lightgbm_ensemble
+LGBM_MODEL_FILENAME=lightgbm_model.joblib
 ```
 
 ## Run
@@ -77,7 +91,13 @@ Recommended approach:
 Important environment variable:
 
 ```text
-CORS_ALLOW_ORIGINS=https://your-frontend.vercel.app,http://localhost:5173
+CORS_ALLOW_ORIGINS=https://your-frontend.netlify.app,http://localhost:5173
+BANGLABERT_MODEL_NAME=your-username/your-model-repo
+BANGLABERT_MODEL_SUBFOLDER=banglabert_lightgbm_ensemble/banglabert_model
+TOKENIZER_MODEL_NAME=your-username/your-model-repo
+TOKENIZER_SUBFOLDER=banglabert_lightgbm_ensemble/banglabert_model
+LGBM_MODEL_REPO_ID=your-username/your-model-repo
+LGBM_MODEL_SUBFOLDER=banglabert_lightgbm_ensemble
 GOOGLE_SEARCH_API_KEY=your_google_api_key
 GOOGLE_SEARCH_CX=your_search_engine_id
 ```
