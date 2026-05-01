@@ -5,6 +5,7 @@ huggingface_hub
 sentencepiece
 protobuf
 lightgbm
+scikit-learn
 joblib
 numpy
 pydantic
