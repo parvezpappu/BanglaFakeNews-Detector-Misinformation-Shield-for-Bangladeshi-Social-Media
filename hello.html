@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Bangla Fake News Detector Project Report</title>
+  <style>
+    @page {
+      margin: 18mm;
+      size: A4;
+    }
+
+    :root {
+      --ink: #102119;
+      --muted: #5f7067;
+      --accent: #0b7f61;
+      --line: #d8e4de;
+      --soft: #f4faf6;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Segoe UI", "Noto Sans Bengali", "Nirmala UI", Arial, sans-serif;
+      font-size: 11.5pt;
+      line-height: 1.55;
+    }
+
+    h1, h2, h3 {
+      line-height: 1.2;
+      page-break-after: avoid;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      color: #07150f;
+      font-size: 28pt;
+    }
+
+    h2 {
+      margin: 28px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--line);
+      color: var(--accent);
+      font-size: 16pt;
+    }
+
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 12.5pt;
+    }
+
+    p {
+      margin: 0 0 10px;
+    }
+
+    ul, ol {
+      margin: 8px 0 12px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    code, pre {
+      font-family: Consolas, "Courier New", monospace;
+    }
+
+    code {
+      padding: 1px 4px;
+      border-radius: 4px;
+      background: #edf5f1;
+      color: #075b45;
+      font-size: 10pt;
+    }
+
+    pre {
+      margin: 10px 0 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fbf9;
+      white-space: pre-wrap;
+      font-size: 9.5pt;
+      line-height: 1.45;
+    }
+
+    .cover {
+      margin-bottom: 26px;
+      padding: 28px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #eefaf4, #ffffff);
+      border: 1px solid var(--line);
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13pt;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .meta div {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+    }
+
+    .meta strong {
+      display: block;
+      color: var(--accent);
+      font-size: 9pt;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .note {
+      padding: 12px 14px;
+      border-left: 4px solid var(--accent);
+      background: var(--soft);
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    table {
+      width: 100%;
+      margin: 12px 0;
+      border-collapse: collapse;
+      font-size: 10pt;
+    }
+
+    th, td {
+      padding: 8px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #edf5f1;
+      color: #075b45;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>Bangla Fake News Detector</h1>
+    <p class="subtitle">Misinformation Shield for Bangladeshi Social Media</p>
+    <div class="meta">
+      <div><strong>Model</strong>BanglaBERT + LightGBM Ensemble</div>
+      <div><strong>Frontend</strong>React + Vite on Netlify</div>
+      <div><strong>Backend</strong>FastAPI on Railway</div>
+      <div><strong>Artifacts</strong>Hugging Face model repository</div>
+    </div>
+  </section>
+
+  <h2>1. Project Goal</h2>
+  <p>The goal of this project is to detect whether a Bangla news article is <strong>real</strong> or <strong>fake</strong>. The system accepts a Bangla headline and article content, predicts a label, shows confidence scores, checks trusted real-world sources, and stores prediction history.</p>
+
+  <h2>2. Dataset Collection</h2>
+  <p>Raw Bangla news datasets were stored in the local project under:</p>
+  <pre>Dataset/
+  Real/
+  Fake/</pre>
+  <p>The raw files were CSV files with inconsistent structures. Some files had headers, some used different column names, and labels were not always represented in the same way. To handle this, we created the dataset builder:</p>
+  <pre>scripts/build_phase1_dataset.py</pre>
+
+  <h2>3. Dataset Cleaning</h2>
+  <p>The dataset builder reads all CSV files from <code>Dataset/Real</code> and <code>Dataset/Fake</code>. It performs these cleaning steps:</p>
+  <ul>
+    <li>Normalizes text by removing extra spaces and invisible characters.</li>
+    <li>Detects possible headline columns such as <code>headline</code>, <code>title</code>, and <code>heading</code>.</li>
+    <li>Detects possible content columns such as <code>content</code>, <code>text</code>, <code>article</code>, <code>body</code>, and <code>news</code>.</li>
+    <li>Detects possible label columns such as <code>label</code>, <code>target</code>, <code>class_label</code>, <code>is_fake</code>, and <code>authenticity</code>.</li>
+    <li>Skips rows with empty content.</li>
+    <li>Creates a stable duplicate key using normalized headline and content.</li>
+    <li>Removes duplicate news records.</li>
+    <li>Excludes conflicting duplicates where the same text appears with both real and fake labels.</li>
+  </ul>
+
+  <h2>4. Label Mapping</h2>
+  <p>The system uses a binary label convention:</p>
+  <pre>0 = fake
+1 = real</pre>
+  <p>For files in <code>Dataset/Fake/</code>, raw labels are interpreted as:</p>
+  <pre>0 / fake / false -> fake
+1 / real / true  -> real
+empty label      -> fake</pre>
+  <p>For files in <code>Dataset/Real/</code>, raw labels are interpreted as:</p>
+  <pre>3       -> real
+0, 1, 2 -> fake</pre>
+
+  <h2>5. Dataset Balancing and Splitting</h2>
+  <p>After cleaning, the dataset is balanced so that fake and real classes have equal representation. Then the final dataset is split into:</p>
+  <pre>80% training
+10% validation
+10% testing</pre>
+  <p>The generated dataset files are saved in:</p>
+  <pre>artifacts/phase1_dataset/
+  train.csv
+  valid.csv
+  test.csv
+  all.csv
+  all_unbalanced_unique.csv
+  conflicting_duplicates.csv
+  README.md</pre>
+  <table>
+    <tr><th>Split</th><th>Rows</th></tr>
+    <tr><td>Train</td><td>17,144</td></tr>
+    <tr><td>Validation</td><td>2,142</td></tr>
+    <tr><td>Test</td><td>2,144</td></tr>
+  </table>
+
+  <h2>6. Text Format for Model Input</h2>
+  <p>For both training and inference, headline and content are joined into one model input:</p>
+  <pre>[HEADLINE] headline text [CONTENT] article content</pre>
+  <p>This is implemented in:</p>
+  <pre>app/backend/features.py</pre>
+
+  <h2>7. BanglaBERT Training</h2>
+  <p>BanglaBERT was fine-tuned using:</p>
+  <pre>scripts/train_banglabert_classifier.py</pre>
+  <p>The base model is:</p>
+  <pre>csebuetnlp/banglabert</pre>
+  <table>
+    <tr><th>Configuration</th><th>Value</th></tr>
+    <tr><td>Epochs</td><td>5</td></tr>
+    <tr><td>Learning rate</td><td>3e-5</td></tr>
+    <tr><td>Batch size</td><td>16</td></tr>
+    <tr><td>Max sequence length</td><td>512</td></tr>
+    <tr><td>FP16</td><td>Enabled</td></tr>
+  </table>
+  <p>BanglaBERT outputs probabilities for the two classes: <code>fake</code> and <code>real</code>.</p>
+
+  <h2>8. Feature Engineering for LightGBM</h2>
+  <p>The LightGBM branch uses a feature vector built from BanglaBERT outputs and handcrafted text features. The final feature count is <strong>783</strong>.</p>
+  <ul>
+    <li>768 BanglaBERT CLS embedding features</li>
+    <li>2 BanglaBERT probability features</li>
+    <li>3 confidence features: max probability, probability margin, entropy</li>
+    <li>10 basic text features: lengths, word counts, digit counts, punctuation counts, English character counts</li>
+  </ul>
+  <p>The feature-building function is currently named <code>build_xgboost_features()</code>, but it is used by the LightGBM model in the deployed system.</p>
+
+  <h2>9. LightGBM Model</h2>
+  <p>The trained LightGBM model is saved as:</p>
+  <pre>artifacts/banglabert_lightgbm_ensemble/lightgbm_model.joblib</pre>
+  <table>
+    <tr><th>LightGBM Configuration</th><th>Value</th></tr>
+    <tr><td>Estimators</td><td>700</td></tr>
+    <tr><td>Max depth</td><td>7</td></tr>
+    <tr><td>Number of leaves</td><td>63</td></tr>
+  </table>
+
+  <h2>10. Ensemble Model</h2>
+  <p>The final prediction combines BanglaBERT probabilities and LightGBM probabilities. In the deployed backend, the configured ensemble weights are:</p>
+  <pre>BanglaBERT weight = 0.50
+LightGBM weight  = 0.50</pre>
+  <p>The final class is the label with the highest combined probability.</p>
+
+  <h2>11. Model Performance</h2>
+  <table>
+    <tr><th>Model</th><th>Test Accuracy</th><th>Test Macro F1</th></tr>
+    <tr><td>BanglaBERT</td><td>93.61%</td><td>93.61%</td></tr>
+    <tr><td>LightGBM</td><td>93.28%</td><td>93.28%</td></tr>
+    <tr><td>Weighted Ensemble</td><td>93.61%</td><td>93.61%</td></tr>
+    <tr><td>Stacking Ensemble</td><td>93.61%</td><td>93.61%</td></tr>
+  </table>
+
+  <h2>12. Saved Artifacts</h2>
+  <p>The final deployed model artifacts are:</p>
+  <pre>artifacts/banglabert_lightgbm_ensemble/
+  lightgbm_model.joblib
+  stacking_model.joblib
+  metrics.json
+  README.md
+  banglabert_model/
+    config.json
+    model.safetensors
+    tokenizer.json
+    tokenizer_config.json
+    training_args.bin</pre>
+  <p>These artifacts were uploaded to the Hugging Face model repository:</p>
+  <pre>ParvezPappu627/bangla-fake-news-banglabert</pre>
+
+  <h2>13. Backend API</h2>
+  <p>The backend is built with FastAPI. The main backend file is:</p>
+  <pre>app/backend/main.py</pre>
+  <p>Important endpoints:</p>
+  <pre>GET    /health
+POST   /predict
+POST   /check-evidence
+GET    /history
+DELETE /history/{prediction_id}</pre>
+
+  <h2>14. Prediction Flow</h2>
+  <ol>
+    <li>The user enters a Bangla headline and content in the frontend.</li>
+    <li>The frontend sends the input to <code>POST /predict</code>.</li>
+    <li>The backend loads <code>EnsemblePredictor</code>.</li>
+    <li>BanglaBERT tokenizes and predicts fake/real probabilities.</li>
+    <li>The BanglaBERT encoder extracts the CLS embedding.</li>
+    <li>The backend builds the 783-feature vector for LightGBM.</li>
+    <li>LightGBM predicts fake/real probabilities.</li>
+    <li>The ensemble combines BanglaBERT and LightGBM probabilities.</li>
+    <li>The backend returns label, confidence, final probabilities, and branch probabilities.</li>
+    <li>The prediction is saved to MongoDB if history storage is configured.</li>
+  </ol>
+
+  <h2>15. Evidence Search</h2>
+  <p>The system can check trusted Bangladeshi news sources. The deployed evidence endpoint uses:</p>
+  <pre>app/backend/evidence_search.py</pre>
+  <p>Search provider order:</p>
+  <ol>
+    <li>SerpAPI is used first if <code>SERPAPI_API_KEY</code> exists.</li>
+    <li>Google Custom Search is used as fallback if SerpAPI fails and both <code>GOOGLE_SEARCH_API_KEY</code> and <code>GOOGLE_SEARCH_CX</code> exist.</li>
+  </ol>
+  <p>Trusted domains include Prothom Alo, BDNews24, The Daily Star, Dhaka Tribune, Bangla Tribune, Jugantor, Kaler Kantho, Somoy News, BSS, Rumor Scanner, and BOOM Bangladesh.</p>
+
+  <h2>16. History Storage</h2>
+  <p>Prediction history is stored in MongoDB using:</p>
+  <pre>app/backend/history_store.py</pre>
+  <p>Each saved prediction includes:</p>
+  <ul>
+    <li>headline</li>
+    <li>content</li>
+    <li>predicted label</li>
+    <li>confidence</li>
+    <li>final probabilities</li>
+    <li>BanglaBERT and LightGBM branch probabilities</li>
+    <li>created timestamp</li>
+  </ul>
+
+  <h2>17. Frontend</h2>
+  <p>The frontend is built with React and Vite. Main files:</p>
+  <pre>app/frontend/src/App.jsx
+app/frontend/src/styles.css</pre>
+  <p>Frontend features:</p>
+  <ul>
+    <li>Analyze Bangla news headline and content</li>
+    <li>Load sample news</li>
+    <li>Show final prediction and confidence</li>
+    <li>Show BanglaBERT and LightGBM branch probabilities</li>
+    <li>Show trusted source evidence search</li>
+    <li>Show prediction history from MongoDB</li>
+    <li>Delete prediction history items</li>
+  </ul>
+
+  <h2>18. Deployment</h2>
+  <p>The project is deployed with separate services:</p>
+  <table>
+    <tr><th>Component</th><th>Platform</th></tr>
+    <tr><td>Frontend</td><td>Netlify</td></tr>
+    <tr><td>Backend</td><td>Railway</td></tr>
+    <tr><td>Model artifacts</td><td>Hugging Face</td></tr>
+    <tr><td>Database</td><td>MongoDB Atlas</td></tr>
+    <tr><td>Evidence search</td><td>SerpAPI / Google fallback</td></tr>
+  </table>
+
+  <h2>19. Railway Runtime Model Loading</h2>
+  <p>Large model files are not stored directly in the Railway build. Railway downloads them from Hugging Face at runtime using environment variables:</p>
+  <pre>BANGLABERT_MODEL_NAME=ParvezPappu627/bangla-fake-news-banglabert
+BANGLABERT_MODEL_SUBFOLDER=artifacts/banglabert_lightgbm_ensemble/banglabert_model
+TOKENIZER_MODEL_NAME=ParvezPappu627/bangla-fake-news-banglabert
+TOKENIZER_SUBFOLDER=artifacts/banglabert_lightgbm_ensemble/banglabert_model
+LGBM_MODEL_REPO_ID=ParvezPappu627/bangla-fake-news-banglabert
+LGBM_MODEL_SUBFOLDER=artifacts/banglabert_lightgbm_ensemble
+LGBM_MODEL_FILENAME=lightgbm_model.joblib</pre>
+  <p>We also added <code>scikit-learn</code> to backend requirements because the saved <code>.joblib</code> model needs it during loading.</p>
+
+  <h2>20. Final System Output</h2>
+  <p>For each submitted article, the system outputs:</p>
+  <ul>
+    <li>Final label: real or fake</li>
+    <li>Final confidence</li>
+    <li>Fake probability</li>
+    <li>Real probability</li>
+    <li>BanglaBERT branch probability</li>
+    <li>LightGBM branch probability</li>
+    <li>Trusted-source evidence results</li>
+    <li>Prediction history entry</li>
+  </ul>
+
+  <h2>21. Short Summary</h2>
+  <p class="note">This project builds a complete Bangla fake news detection system. We clean and balance raw Bangla news datasets, fine-tune BanglaBERT, combine BanglaBERT embeddings and probabilities with LightGBM, deploy the model through FastAPI, serve the frontend through Netlify, load model artifacts from Hugging Face, verify news using SerpAPI or Google search, and store prediction history in MongoDB.</p>
+</body>
+</html>
